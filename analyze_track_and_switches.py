@@ -5,7 +5,6 @@ import glob
 
 
 
-
 def find_header_row(df, keywords=("序号", "进路类型", "道岔", "轨道区段")):
     """动态查找包含关键字的表头行"""
     for idx, row in df.iterrows():
@@ -25,6 +24,30 @@ def parse_track_info(entry):
     except ValueError:
         return None, None
 
+def read_excel_with_fallback(file_path):
+    """
+    Tries to read an Excel file with default encoding,
+    falls back to GBK for .xls files if a UnicodeDecodeError occurs.
+    """
+    try:
+        # Try standard reading first (works for .xlsx and most .xls)
+        return pd.read_excel(file_path, sheet_name=0, header=None)
+    except UnicodeDecodeError:
+        # If it fails and it's an .xls file, try with GBK encoding
+        if file_path.lower().endswith('.xls'):
+            try:
+                # For .xls, xlrd engine is used, which supports encoding_override
+                return pd.read_excel(file_path, sheet_name=0, header=None, engine='xlrd', engine_kwargs={'encoding_override': 'gbk'})
+            except Exception as e:
+                # If fallback also fails, raise a more informative error
+                raise IOError(f"Failed to read {os.path.basename(file_path)} with default encoding and GBK fallback.") from e
+        else:
+            # For .xlsx, the error is likely not a simple encoding issue. Re-raise.
+            raise
+    except Exception as e:
+        raise IOError(f"An unexpected error occurred while reading {os.path.basename(file_path)}") from e
+
+
 input_dir = os.getcwd()
 output_base_dir = os.getcwd()
 
@@ -37,8 +60,7 @@ if not excel_files:
 else:
     for file_path in excel_files:
         try:
-            xls = pd.ExcelFile(file_path)
-            df_raw = xls.parse(xls.sheet_names[0], header=None) # Disable auto header detection
+            df_raw = read_excel_with_fallback(file_path)
             
             header_row_idx = find_header_row(df_raw)
             columns = df_raw.iloc[header_row_idx].tolist()
